@@ -1,0 +1,258 @@
+---
+title: "stat 350 project"
+output: github_document
+by:
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(dplyr)
+library(car)
+library(MASS)
+library(tseries)
+library(psych)
+library(forecast)
+
+```
+
+## GitHub Documents
+
+This is an R Markdown format used for publishing markdown documents to GitHub. When you click the **Knit** button all R code chunks are run and a markdown file (.md) suitable for publishing to GitHub is generated.
+```{r fundamentals}
+#import data
+df_fundamental <- read_csv("fundamentals.csv")
+#name variables
+df<-data_frame("Symbol"=df_fundamental$`Ticker Symbol`,
+               "TE"= df_fundamental$`Total Equity`, 
+               "PE"= df_fundamental$`Period Ending`,
+               "TL" =df_fundamental$`Total Liabilities`, 
+               "CS"=df_fundamental$`Common Stocks`,
+               "TA"=df_fundamental$`Total Assets`,
+               "NI"=df_fundamental$`Net Income`,
+               "ROE"= df_fundamental$`After Tax ROE`)
+#filter and summary data
+df1<-filter(df,CS!=0)
+summary(df1,c(10))
+```
+```{r}
+#regression model--- Full Model
+
+fit<-lm(TE~ NI+TL+CS+TA+ROE, data=df1[-1,])
+summary(fit)
+fit
+```
+```{r,echo=FALSE}
+plot(fit,which = c(1,2,5))
+```
+```{r,echo=FALSE}
+fitlog<-lm(log(TE)~ NI+TL+CS+TA+ROE, data=df1[-1,])
+plot(fitlog,which=c(1,2,5))
+```
+```{r}
+fit_r<-rlm(TE~ NI+TL+CS+TA+ROE, data=df1[-1,])
+stud_res=studres(fit)
+y_hat=fit$fitted.values
+y_hat
+```
+```{r,echo=FALSE}
+plot(x=stud_res,y=y_hat)
+```
+```{r,echo=FALSE}
+#qq-plot
+qqnorm(df1$TE)
+qqline(df1$TE,col="red")
+```
+```{r}
+par(mfrow=c(1,1))
+summary(fit)
+```
+```{r,echo=FALSE}
+cor1=vif(fit)
+plot(cor1)
+```
+```{r}
+fitAIC<-stepAIC(fit,direction = "both")
+fitAIC
+summary(fitAIC)
+stepAIC(fit,direction = "backward")
+```
+```{r,echo=FALSE}
+# Reduce model 
+
+fit1 <- lm(TE~ TL+TA+NI, data=df1[-1,])
+fit1_log <- lm(log(TE)~ TL+TA+NI,data=df1[-1,])
+plot(fit1_log,which=c(1,2,5))
+```
+```{r,echo=FALSE}
+plot(fit1,which= c(1,2,5))
+```
+```{r,echo=FALSE}
+fit1_r<- rlm(TE~ TL+TA+NI,data=df1[-1,])
+plot(fit1_r,whcih=c(1,2,5))
+```
+```{r,echo=FALSE}
+summary(fit1)
+plot(fit1,which = c(1,2,5))
+fitted(fit1)
+```
+
+
+
+```{r prices}
+library(tseries)
+library(psych)
+library(forecast)
+##import data 
+prices= read.csv("prices.csv")
+head(prices)
+walmart<-prices[which(prices$symbol=="WMT"),]
+amazon<-prices[which(prices$symbol=="AMZN"),]
+head(walmart)
+head(amazon)
+##We only use close price
+walmart<-ts(walmart$close)
+amazon<-ts(amazon$close)
+```
+
+
+
+```{r prices, echo=FALSE}
+## Descriptive statistics
+describe(walmart)
+describe(amazon)
+hist(walmart)
+hist(amazon)
+
+plot(walmart,ylab="Daily Closing Price", main="Wal-Mart Stock Price from 2010 to 2016")
+plot(amazon,ylab="Daily Closing Price", main="Amazon Stock Price from 2010 to 2016")
+
+```
+```{r}
+##ADF Unit root test (check the Stationary)
+adf.test(walmart)
+adf.test(amazon)
+```
+```{r,echo=FALSE}
+##ADF Unit root test (check the Stationary)
+adf.test(walmart)
+adf.test(amazon)
+```
+
+
+
+```{r,echo=FALSE}
+## Converted into stock return (stationary conversion)
+r_walmart <- diff(walmart )/lag(walmart )
+r_amazon<- diff(amazon)/lag(amazon)
+mean(r_walmart)
+mean(r_amazon)
+sd(r_walmart)
+sd(r_amazon)
+
+plot(r_walmart,ylab="Daily Return", main="Wal-Mart Return from 2010 to 2016")
+plot(r_amazon,ylab="Daily Return", main="Amazon  Return from 2010 to 2016")
+```
+
+
+```{r,echo=FALSE}
+##Unit root test
+adf.test(r_walmart)
+adf.test(r_amazon)
+##ACF and PACF
+par(mfrow=c(2,1))
+acf(r_walmart)
+pacf(r_walmart)
+
+par(mfrow=c(2,1))
+acf(r_walmart)
+pacf(r_walmart)
+```
+
+
+```{r}
+
+##Train and test group
+
+train1<-walmart[1:(length(walmart)-30)]
+test1<-walmart[(length(walmart)-29):length(walmart)]
+
+train2<-amazon[1:(length(amazon)-30)]
+test2<-amazon[(length(amazon)-29):length(amazon)]
+```
+
+
+```{r,echo=FALSE}
+###Fit an ARIMA(0,1,1) model for Wal-Mart
+auto.arima(train1,trace = TRUE)
+
+fit1<-arima(train1,order=c(0,1,1))
+fit1
+
+## ARIMA(0,1,1) Prediction
+fore<-predict(fit1, n.ahead=30)
+fore
+```
+```{r,echo=FALSE}
+## Plot forecasts
+U=fore$pred+1.645*fore$se
+L=fore$pred-1.645*fore$se
+
+{par(mfrow=c(1,1))
+ts.plot(train1)
+real<-ts(test1,start=length(train1)+1,end=length(walmart))
+lines(real,col="green")
+lines(fore$pred,col="red")
+lines(U,col="blue", lty=3)
+lines(L,col="blue", lty=3)}
+```
+```{r}
+## MSE
+MSE1<-sum((fore$pred-real)^2)/length(real)
+MSE1
+```
+
+```{r}
+###Fit an ARIMA(0,1,1) model for Amazon
+auto.arima(train2,trace = TRUE)
+
+fit2<-arima(train2,order=c(0,1,1))
+fit2
+
+## ARIMA(0,1,1) Prediction
+fore<-predict(fit2, n.ahead=30)
+fore
+```
+```{r,echo=FALSE}
+## Plot forecasts
+U=fore$pred+1.645*fore$se
+L=fore$pred-1.645*fore$se
+
+par(mfrow=c(1,1))
+{ts.plot(train2)
+real<-ts(test2,start=length(train2)+1,end=length(amazon))
+lines(real,col="green")
+lines(fore$pred,col="red")
+lines(U,col="blue", lty=3)
+lines(L,col="blue", lty=3)}
+```
+
+```{r}
+## MSE
+MSE2<-sum((fore$pred-real)^2)/length(real)
+MSE2
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
